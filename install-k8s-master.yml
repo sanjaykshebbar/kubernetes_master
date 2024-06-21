@@ -1,0 +1,94 @@
+---
+- name: Install Kubernetes Master
+  hosts: all
+  become: yes
+  tasks:
+    - name: Install dependencies
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - apt-transport-https
+        - ca-certificates
+        - curl
+        - software-properties-common
+        - gnupg2
+        - lsb-release
+
+    - name: Add Docker's official GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker APT repository
+      apt_repository:
+        repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
+        state: present
+
+    - name: Install Docker
+      apt:
+        name: docker-ce
+        state: present
+      notify:
+        - Start Docker
+
+    - name: Add Kubernetes APT key
+      apt_key:
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        state: present
+
+    - name: Add Kubernetes APT repository
+      apt_repository:
+        repo: deb http://apt.kubernetes.io/ kubernetes-xenial main
+        state: present
+
+    - name: Install Kubernetes components
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - kubelet
+        - kubeadm
+        - kubectl
+      notify:
+        - Enable kubelet
+
+    - name: Disable swap
+      command: swapoff -a
+      notify:
+        - Disable swap in fstab
+
+    - name: Download Kubernetes setup script
+      git:
+        repo: 'https://github.com/sanjaykshebbar/kubernetes_master.git'
+        dest: /tmp/kubernetes_master
+        update: yes
+
+    - name: Add execution permission to the setup script
+      file:
+        path: /tmp/kubernetes_master/setup-k8s-master.sh
+        mode: '0755'
+
+    - name: Execute the setup script
+      command: /tmp/kubernetes_master/setup-k8s-master.sh
+      args:
+        chdir: /tmp/kubernetes_master
+
+  handlers:
+    - name: Start Docker
+      service:
+        name: docker
+        state: started
+
+    - name: Enable kubelet
+      systemd:
+        name: kubelet
+        enabled: yes
+        state: started
+
+    - name: Disable swap in fstab
+      replace:
+        path: /etc/fstab
+        regexp: '^\s*([^#\s]+)\s+none\s+swap\s+sw\s+0\s+0\s*$'
+        replace: '# \1 none swap sw 0 0'
+
